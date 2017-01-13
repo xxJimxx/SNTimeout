@@ -1,2 +1,3 @@
 # SNTimeout
-ServiceNow Timeout warning
+ServiceNow Timeout
+It'll be in this repositories wiki...
