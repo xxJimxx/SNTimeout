@@ -1,3 +1,3 @@
 # SNTimeout
-ServiceNow Timeout
+ServiceNow Timeout --
 It'll be in this repositories wiki...
