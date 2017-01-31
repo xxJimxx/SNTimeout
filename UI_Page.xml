@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<j:jelly trim="false" xmlns:j="jelly:core" xmlns:g="glide" xmlns:j2="null" xmlns:g2="null">
+
+<g:ui_form>
+  <!-- Get the values from dialog preferences -->
+  <g:evaluate var="jvar_expireAt"
+    expression="RP.getWindowProperties().get('expireAt')" />
+  <input type="hidden" id='expireAt' value="${jvar_expireAt}" />
+  <g:evaluate var="jvar_duration"
+    expression="RP.getWindowProperties().get('duration')" />
+  <input type="hidden" id='duration' value="${jvar_duration}" />
+
+	<!-- Set up form fields and labels -->
+	<div style="margin:0; padding:10px; border:10px solid black">
+	<div id="bar" width="100%" >
+	    <div class="progress" style="height:24px">
+            <div id="progressBar" class="progress-bar progress-bar-danger progress-bar-striped" role="progressbar"  aria-valuenow="60" aria-valuemin="0" aria-valuemax="100" style="width:0%" >
+				
+			</div>
+		</div>
+	</div>		
+	<div class=" h4 text-center text-danger">
+		<span id="progressMsg"></span>
+	</div>	
+
+     <div id="timedOut" class="text-center" style="display:none">
+			<a class="btn btn-danger" href="">Return to Application&#160;&#160;></a>
+	 </div>  
+	 </div>
+</g:ui_form>
+
+	
+</j:jelly>
