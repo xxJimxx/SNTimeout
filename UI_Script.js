@@ -14,10 +14,12 @@ var _GlobalModalInterval = null;
 		'secDigest':10,
 		"secHeartbeat":60,
 		"secWarningDuration":120,
-		"minSessionTimeout":3,
+		"minSessionTimeout":30,
 		'dialogTitle':' ',
 		'loginPage':'login.do'
+		'hbRetries': 2
 	};
+	var objDialog = null; //do not put in globals to to logging issue
 	// globals in JSON to reduce exposure
 	var globals = {
 		'now':new Date(),
@@ -26,108 +28,146 @@ var _GlobalModalInterval = null;
 		'nextHeartbeat':new Date(),
 		'warnAt':null,
 		'expireAt':null,
-		'objDialog':null,
 		'objTimer':null,
 		'originalTitle':''
 	};
 	
 	
-	//initialize actions (setup timed loop to main)
-	function init(){
-		//console.log("doc.url = " + window.parent.document.URL);
-		if (window.parent.document.URL.indexOf(settings.loginPage) > -1){
-			console.log("login page identified, no timer");
-			return;
-		}
+    //initialize actions (setup timed loop to main)
+    function init() {
+        //console.log("doc.url = " + window.parent.document.URL);
+        if ((window.name !== 'gsft_main') || (window.parent.document.URL.indexOf(settings.loginPage) > -1)) {
+            console.log("Prevent timer in this window or on this page.");
+            return;
+        }
 		
-		main();
-		globals.objTimer = window.setInterval(main, settings.secDigest * 1000);
-		heartbeat();
-	}
+        globals.objTimer = window.setInterval(main, settings.secDigest * 1000);
+        main();
+        if ((typeof Notification !== 'undefined') && (Notification.permission !== "granted")) {
+            Notification.requestPermission();
+        }
+    }	
 	
 	/*main is looped on secDigest and checks for:
 	Heartbeat should be performed
 	Warning dialog opened
 	Session Expired	*/
-	function main(){
-		console.log("Session Timer: main");
-		
-		globals.now = new Date();
-		calcEnds();		
+    function main() {
+        //console.log("Session Timer: main");
 
-		if (globals.expireAt.getTime() < globals.now.getTime()){
-			//check for session expired
-			//SN uses a shared session between browser tabs.  Forcing logoff will end this session.
-			//window.location = "logout.do";
-			console.log('Session Expired!');
-			shutdown();
-		}
-		else if (globals.warnAt.getTime() < globals.now.getTime()){
-			//check if modal should be open
-			if (globals.objDialog == null){
-				//if modal isn't open, open it
-				globals.originalTitle = window.parent.document.title;
-				//Set the dialog title
-				//Instantiate the dialog
-				globals.objDialog = new GlideDialogWindow("Jims_session_warning_modal");
-				globals.objDialog.setTitle(settings.dialogTitle);
-				globals.objDialog.removeCloseDecoration();
-				globals.objDialog.setPreference("expireAt", globals.expireAt);
-				globals.objDialog.setPreference("duration", settings.secWarningDuration);
-				globals.objDialog.setSize('400','135');
-				globals.objDialog.render(); //Open the dialog
-			}
-		}
-		else if (globals.lastClientAction.getTime() > globals.lastHeartbeat.getTime() && globals.now.getTime() >= globals.nextHeartbeat.getTime()){
-			//if browser inputs are current and heartbeat duration elapsed, perform heartbeat
-			heartbeat();
-		}
-		else{
-			//user has become idle, do nothing
-			//console.log('User Inactive');
-		}
-	}
+        globals.now = new Date();
+        calcEnds();
+
+        if (globals.expireAt.getTime() < globals.now.getTime()) {
+            //check for session expired
+            //SN uses a shared session between browser tabs.  Forcing logoff will end this session.
+            //window.location = "logout.do";
+            console.log('Session Expired!');
+            shutdown();
+        }
+        else if (globals.warnAt.getTime() < globals.now.getTime()) {
+            //check if modal should be open on each digest
+            if (objDialog == null) {
+                //if modal isn't open, open it
+                openWarningModal();
+                if ((typeof Notification !== 'undefined') && (Notification.permission === "granted")) {
+                    notify('    A browser tab is\r\n        about to expire...', 10);
+                }
+            }
+            //heartbeat on digest during modal to check if other tabs are active
+            //heartbeat(globals.lastClientAction.getTime() > globals.lastHeartbeat.getTime());
+        }
+        else if (globals.now.getTime() >= globals.nextHeartbeat.getTime()) {
+            //heartbeat duration elapsed, perform heartbeat
+            heartbeat(globals.lastClientAction.getTime() > globals.lastHeartbeat.getTime());
+        }
+        else {
+            //digest between heartbeats
+            //notify('    Hello\r\n        world...',5);
+        }
+    }
 	
-	// Performs a low impact glideAjax call to keep the server session alive while the user is active in the browser
-	function heartbeat(){
-		var sendDT = new Date();
-		var ga = new GlideAjax('Jims_session_heartbeat');
-		ga.addParam("sysparm_name", "pacemaker");
-		ga.addParam("sysparm_heartbeat",new Date());
-		//console.log("Session Timer: heartbeat");
-		ga.getXML(onAjaxReturn);
-		
-	}
+    function openWarningModal() {
+        globals.originalTitle = window.parent.document.title;
+        //Set the dialog title
+        //Instantiate the dialog
+        objDialog = new GlideDialogWindow("Jims_session_warning_modal");
+        objDialog.setTitle(settings.dialogTitle);
+        objDialog.removeCloseDecoration();
+        objDialog.setPreference("expireAt", globals.expireAt);
+        objDialog.setPreference("duration", settings.secWarningDuration);
+        objDialog.setSize('400', '135');
+        objDialog.render(); //Open the dialog
+    }	
+	
+    function notify(msg, secDuration) {
+        var options = {
+            'body': msg,
+            'icon': '/favicon.ico'
+        };
+        var notification = new Notification('Session Timer Notification', options);
+        notification.onclick = function () {
+            window.focus();
+        };
+        setTimeout(function () {
+            notification.close();
+        }, secDuration * 1000);
+    }	
+	
+	// Performs basic glideAjax call to server
+    // blnBeat true if Client activity since last heartbeat to refresh session.
+    // blnBeat false do not refresh timer but check if other tabs are active
+    function heartbeat(blnBeat) {
+        var sendDT = new Date();
+        var ga = new GlideAjax('Jims_session_heartbeat');
+        ga.addParam("sysparm_name", "pacemaker");
+        ga.addParam("sysparm_heartbeat", new Date());
+        ga.addParam("sysparm_beat", blnBeat);
+        //console.log("Session Timer: heartbeat");
+        ga.getXML(onAjaxReturn);
+
+    } 
 	// glideAjax respose
-	function onAjaxReturn(xml){
-		var response = xml.responseXML.documentElement.getAttribute("answer");
-		response = JSON.parse(response);
-		
-		globals.lastHeartbeat = new Date(response.dtHeartbeat);
-		globals.nextHeartbeat = new Date(globals.lastHeartbeat.getTime() + (settings.secHeartbeat * 1000));
-		
-		//Override client defined interval if response provides different values (Allows for system properties to setup script)
-		if (response.minSessionTimeout != null && response.minSessionTimeout != settings.minSessionTimeout){
-			settings.minSessionTimeout = response.minSessionTimeout;
-			calcEnds();		
-		}
-		if (response.secWarningDuration != null && response.secWarningDuration != settings.secWarningDuration){
-			settings.secWarningDuration = response.secWarningDuration;
-			calcEnds();		
-		}
-		if (response.secHeartbeat != null && response.secHeartbeat != settings.secHeartbeat){
-			settings.secHeartbeat = response.secHeartbeat;
-		}
-		if (response.secDigest != null && response.secDigest != settings.secDigest){
-			settings.secDigest = response.secDigest;
-			clearInterval(globals.objTimer);
-			globals.objTimer = window.setInterval(main, settings.secDigest * 1000);
-		}
-		
-		var echo = {'heartbeatResponse':response, 'settings': settings, 'globals': globals};
-		console.log('SessionTimer = ' + JSON.stringify(echo,null,4));
-		
-	}
+    function onAjaxReturn(result) {
+        var strResponse = result.responseXML.documentElement.getAttribute("answer");
+        if (strResponse == null) {
+            if (globals.intRetry < settings.hbRetries) {
+                globals.intRetry += 1;
+                return;
+            }
+            else {
+                shutdown();
+                alert('Your session ended prematurely.  Please re-establish your connection to continue.');
+                return;
+            }
+        }
+
+        var response = JSON.parse(strResponse);
+        globals.lastHeartbeat = new Date(response.dtHeartbeat);
+        globals.nextHeartbeat = new Date(globals.lastHeartbeat.getTime() + (settings.secHeartbeat * 1000));
+
+        //Override client defined interval if response provides different values (Allows for system properties to setup script)
+        if (response.minSessionTimeout != null && response.minSessionTimeout != settings.minSessionTimeout) {
+            settings.minSessionTimeout = response.minSessionTimeout;
+            calcEnds();
+        }
+        if (response.secWarningDuration != null && response.secWarningDuration != settings.secWarningDuration) {
+            settings.secWarningDuration = response.secWarningDuration;
+            calcEnds();
+        }
+        if (response.secHeartbeat != null && response.secHeartbeat != settings.secHeartbeat) {
+            settings.secHeartbeat = response.secHeartbeat;
+        }
+        if (response.secDigest != null && response.secDigest != settings.secDigest) {
+            settings.secDigest = response.secDigest;
+            clearInterval(globals.objTimer);
+            globals.objTimer = window.setInterval(main, settings.secDigest * 1000);
+        }
+        globals.intRetry = 0;
+        var echo = { 'heartbeatResponse': response, 'settings': settings, 'globals': globals };
+        console.log('SessionTimer = ' + JSON.stringify(echo, null, 4));
+
+    }
 	function calcEnds(){
 		globals.expireAt = new Date(globals.lastClientAction.getTime() + (settings.minSessionTimeout * 60000));
 		globals.warnAt = new Date(globals.expireAt.getTime() - (settings.secWarningDuration * 1000));
@@ -143,19 +183,19 @@ var _GlobalModalInterval = null;
 	
 	//refresh last user input datetime, if dialog is open when user becomes active close dialog and perform heartbeat
 	function clientAction(){
-		console.log("Session Timer: clientAction");
+		//console.log("Session Timer: clientAction");
 		globals.lastClientAction = new Date();
 		if (globals.expireAt != null && globals.expireAt.getTime() < globals.lastClientAction.getTime()){
 			//expired, shut it down
 			shutdown();
 		}
-		else if (globals.objDialog != null){
+		else if (objDialog != null){
 			//if warning dialog is open, close it and refresh session
 			window.parent.document.title = globals.originalTitle;
 			clearInterval(_GlobalModalInterval);
-			globals.objDialog.destroy();
-			globals.objDialog = null;
-			heartbeat();
+			objDialog.destroy();
+			objDialog = null;
+			heartbeat(true);
 		}
 	}
 	
