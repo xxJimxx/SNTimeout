@@ -31,8 +31,9 @@ Jims_session_heartbeat.prototype = Object.extendsObject(AbstractAjaxProcessor, {
 			response.minSessionTimeout = to;
 		}
 		
-		//TESTING
+		//TESTING  --  THIS DOES NOT WORK
 		//Found updateing a record would refresh a session in personal dev space but is not working in corporate environment
+		/*
 		var gr1 = new GlideRecord('sys_user_session');
 		if (gr1.get('ID', response.sessionID)){
 			response.sessionID += ' : Found';
@@ -42,7 +43,7 @@ Jims_session_heartbeat.prototype = Object.extendsObject(AbstractAjaxProcessor, {
 		else {
 			response.sessionID += ' : Not Found';
 		}
-		
+		*/
 		
 		var json = new JSON();
 		return json.encode(response);
